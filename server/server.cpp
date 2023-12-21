@@ -371,6 +371,7 @@ bool handle_time_out(int client_fd, struct sockaddr_in client_addr, vector<strin
     }
     return entered;
 }
+
 /*
   Handle Check Sum ;
 */
@@ -438,6 +439,7 @@ bool retransmit_loss_packet(bool found, int client_fd, struct sockaddr_in client
 
     return found;
 }
+
 /*
    Send Data and handle Congestion and retransmit loss packet
 */
@@ -615,6 +617,7 @@ void sendTheData_HandleCongesion(int client_fd, struct sockaddr_in client_addr, 
     // File Close
     myFile_Handler.close();
 }
+
 /*
     in this function we Send packet data to client
 */
@@ -645,6 +648,7 @@ bool send_packet_data(bool corrupt, int client_fd, char sendBuffer[maxSegSize], 
         return false;
     }
 }
+
 /*
   in this function we Send packets.
 */
