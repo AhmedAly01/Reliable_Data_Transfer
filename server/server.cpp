@@ -6,7 +6,6 @@
 #include <errno.h>
 #include <netdb.h>
 #include <string>
-#include <thread>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -75,41 +74,21 @@ void sendTheData_HandleCongesion(int client_fd, struct sockaddr_in client_addr, 
 bool send_packet(int client_fd, struct sockaddr_in client_addr, string temp_packet_string, int seqNum);
 
 /*
-  Read file of COntent of the file
+  Read file of Content of the file
 */
 vector<string> readFileData(string fName)
 {
-    string temp = "";
-    vector<string> dataPackets;
-    ifstream ifStream;
-    ifStream.open(fName);
-    if (ifStream)
+    ifstream file(fName);
+    vector<string> chunks;
+    string chunk;
+    while (getline(file, chunk, '\0'))
     {
-        char c;
-        int idx = 0;
-        while (ifStream.get(c))
+        for (int i = 0; i < chunk.size(); i += ChunkSize)
         {
-            if (idx < ChunkSize)
-            {
-                temp += c;
-            }
-            else
-            {
-                dataPackets.push_back(temp);
-                temp.clear();
-                temp += c;
-                idx = 0;
-                continue;
-            }
-            idx++;
-        }
-        if (idx > 0)
-        {
-            dataPackets.push_back(temp);
+            chunks.push_back(chunk.substr(i, ChunkSize));
         }
     }
-    ifStream.close();
-    return dataPackets;
+    return chunks;
 }
 
 /*
@@ -164,12 +143,12 @@ packet createPacket(string packetStr, int seqNo)
 }
 
 /*
-check if data is Corrupted
+    simulate a packet loss
 */
-bool corruptDatagram()
+bool isPacketLoss()
 {
-    double isLost = (rand() % 100) * plp;
-    if (isLost >= 5.9)
+    double isLost = ((double)rand() / (RAND_MAX)) < plp;
+    if (isLost)
     {
         cout << "-------- Packet Loss Simulated --------" << isLost << endl;
         return true;
@@ -180,13 +159,13 @@ bool corruptDatagram()
 /*
    read commands inside of info.txt
 */
-vector<string> readInfo()
+vector<string> getArgs()
 {
-    string fName = "info.txt";
+    string fileName = "args.txt";
     vector<string> reqs;
     string line;
     ifstream f;
-    f.open(fName);
+    f.open(fileName);
     while (getline(f, line))
     {
         reqs.push_back(line);
@@ -197,9 +176,9 @@ vector<string> readInfo()
 /*
     check if the file is exist or not
 */
-long checkFileExistence(string fName)
+long checkFileExistence(string fileName)
 {
-    ifstream file(fName.c_str(), ifstream::ate | ifstream::binary);
+    ifstream file(fileName.c_str(), ifstream::ate | ifstream::binary);
     if (!file.is_open())
     {
         cout << "-------- File Open Failed --------" << endl;
@@ -214,7 +193,7 @@ long checkFileExistence(string fName)
 
 int main()
 {
-    vector<string> args = readInfo();
+    vector<string> args = getArgs();
     int portNo = stoi(args[0]);
     randomSeed = stoi(args[1]);
     srand(randomSeed);
@@ -241,7 +220,7 @@ int main()
     while (true)
     {
         socklen_t clientAddressLength = sizeof(struct sockaddr);
-        cout << "============ Started Connection ============" << endl;
+        cout << "============ Started Listening ============" << endl;
         char rec_buffer[maxSegSize];
         ssize_t receivedBytes = recvfrom(serverSocket, rec_buffer, maxSegSize, 0, (struct sockaddr *)&clientAddress, &clientAddressLength);
         if (receivedBytes <= 0)
@@ -274,7 +253,7 @@ int main()
 /*
   send ack to file name
 */
-void send_ack_file_name(int client_fd, string fName, int numberOfPackets, struct sockaddr_in client_addr)
+void send_ack_file_name(int client_fd, string fileName, int numberOfPackets, struct sockaddr_in client_addr)
 {
     struct packetAck ack;
     ack.checkSum = 0;
@@ -296,11 +275,16 @@ void send_ack_file_name(int client_fd, string fName, int numberOfPackets, struct
     }
 
     /** read data from file **/
-    vector<string> dataPackets = readFileData(fName);
+    vector<string> dataPackets = readFileData(fileName);
     if (dataPackets.size() == numberOfPackets)
     {
         cout << "-------- File Data Is Read Successfully --------" << endl
              << flush;
+    }
+    else
+    {
+        cout << "-------- File Data couldn't be read --------" << endl;
+        exit(1);
     }
 
     /** start sending data and handling congestion control using the SM **/
@@ -312,11 +296,12 @@ void send_ack_file_name(int client_fd, string fName, int numberOfPackets, struct
 */
 void handle_client_request(int serverSocket, int client_fd, struct sockaddr_in client_addr, char rec_buffer[], int bufferSize)
 {
+    auto start = chrono::high_resolution_clock::now();
     auto *data_packet = (struct packet *)rec_buffer;
-    string fName = string(data_packet->data);
-    cout << "-------- Requested File Name From Client  : " << fName << " --------" << endl
-         << " , Length : " << fName.size() << " --------" << endl;
-    int fileSize = checkFileExistence(fName);
+    string fileName = string(data_packet->data);
+    cout << "-------- Requested File Name From Client  : " << fileName << " --------" << endl
+         << " , Length : " << fileName.size() << " --------" << endl;
+    int fileSize = checkFileExistence(fileName);
     if (fileSize == -1)
     {
         return;
@@ -325,7 +310,10 @@ void handle_client_request(int serverSocket, int client_fd, struct sockaddr_in c
     cout << "-------- File Size : " << fileSize << " Bytes , Num. of chuncks : " << numberOfPackets << " --------" << endl
          << flush;
 
-    send_ack_file_name(client_fd, fName, numberOfPackets, client_addr);
+    send_ack_file_name(client_fd, fileName, numberOfPackets, client_addr);
+    auto stop = chrono::high_resolution_clock::now();
+    auto duration = chrono::duration_cast<chrono::microseconds>(stop - start);
+    cerr << "Time taken in microseconds : " << (double)(duration.count() / 1000.0) << endl;
 }
 
 /*
@@ -333,7 +321,7 @@ void handle_client_request(int serverSocket, int client_fd, struct sockaddr_in c
 */
 bool handle_time_out(int client_fd, struct sockaddr_in client_addr, vector<string> data)
 {
-    bool entered = false;
+    bool timedOut = false;
     for (int j = 0; j < packetNotSents.size(); j++)
     {
         packetNotSent nspkt = packetNotSents[j];
@@ -341,7 +329,7 @@ bool handle_time_out(int client_fd, struct sockaddr_in client_addr, vector<strin
         chrono::duration<double> elapsed_time = current_time - nspkt.timer;
         if (elapsed_time.count() >= 2)
         {
-            entered = true;
+            timedOut = true;
             cout << "-------- Timed Out --------" << endl
                  << flush;
             cout << "-------- Re-transmitting the packet --------" << endl
@@ -369,7 +357,7 @@ bool handle_time_out(int client_fd, struct sockaddr_in client_addr, vector<strin
             }
         }
     }
-    return entered;
+    return timedOut;
 }
 
 /*
@@ -446,12 +434,10 @@ bool retransmit_loss_packet(bool found, int client_fd, struct sockaddr_in client
 void sendTheData_HandleCongesion(int client_fd, struct sockaddr_in client_addr, vector<string> data)
 {
     ofstream myFile_Handler;
-    // File Open
     myFile_Handler.open("Congestion_window.txt");
 
     int Cwnd_base = 0;
     double Cwnd = 1;
-    // Write to the file
     myFile_Handler << Cwnd << endl;
     int TotalPackets = data.size();
     while (Flag)
@@ -568,7 +554,6 @@ void sendTheData_HandleCongesion(int client_fd, struct sockaddr_in client_addr, 
                             {
                                 Cwnd = Cwnd * 2;
                             }
-                            // Write to the file
                             myFile_Handler << Cwnd << endl;
                             if (Cwnd >= Sst)
                             {
@@ -578,14 +563,12 @@ void sendTheData_HandleCongesion(int client_fd, struct sockaddr_in client_addr, 
                         else if (St == congestionAvoidance)
                         {
                             Cwnd++;
-                            // Write to the file
                             myFile_Handler << Cwnd << endl;
                         }
                         else if (St == fastRecovery)
                         {
                             St = congestionAvoidance;
                             Cwnd = Sst;
-                            // Write to the file
                             myFile_Handler << Cwnd << endl;
                         }
                         SentPacketsNotAcked--;
@@ -602,19 +585,20 @@ void sendTheData_HandleCongesion(int client_fd, struct sockaddr_in client_addr, 
                 }
             }
         }
-        /** Handle Time Out **/
-        bool entered = false;
-        entered = handle_time_out(client_fd, client_addr, data);
-        if (entered)
+        bool timedOut = false;
+        timedOut = handle_time_out(client_fd, client_addr, data);
+        if (timedOut)
         {
-            entered = false;
+            timedOut = false;
             Cwnd = 1;
             St = slowStart;
-            // Write to the file
             myFile_Handler << Cwnd << endl;
         }
+        if (AlreadySentPackets == TotalPackets)
+        {
+            Flag = false;
+        }
     }
-    // File Close
     myFile_Handler.close();
 }
 
@@ -623,7 +607,7 @@ void sendTheData_HandleCongesion(int client_fd, struct sockaddr_in client_addr, 
 */
 bool send_packet_data(bool corrupt, int client_fd, char sendBuffer[maxSegSize], struct sockaddr_in client_addr, struct packet data_packet, int seqNum)
 {
-    if (!corruptDatagram() && !corrupt)
+    if (!isPacketLoss() && !corrupt)
     {
         ssize_t bytesSent = sendto(client_fd, sendBuffer, maxSegSize, 0, (struct sockaddr *)&client_addr, sizeof(struct sockaddr));
         if (bytesSent == -1)
@@ -656,7 +640,7 @@ bool send_packet(int client_fd, struct sockaddr_in client_addr, string temp_pack
 {
     char sendBuffer[maxSegSize];
     struct packet data_packet = createPacket(temp_packet_string, seqNum);
-    bool corrupt = corruptDatagram();
+    bool corrupt = isPacketLoss();
     if (corrupt)
     {
         data_packet.checkSum = data_packet.checkSum - 1;

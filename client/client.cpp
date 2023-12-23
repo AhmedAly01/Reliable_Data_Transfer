@@ -36,13 +36,13 @@ struct packetAck
 /*
    read Commands from info.txt
 */
-vector<string> readInfo()
+vector<string> getArgs()
 {
-    string fName = "info.txt";
+    string fileName = "args.txt";
     vector<string> infos;
     string line;
     ifstream f;
-    f.open(fName);
+    f.open(fileName);
     while (getline(f, line))
     {
         infos.push_back(line);
@@ -53,9 +53,9 @@ vector<string> readInfo()
 /*
    this function is used to write file
 */
-void writeFile(string fName, string data)
+void writeFile(string fileName, string data)
 {
-    ofstream f_stream(fName.c_str());
+    ofstream f_stream(fileName.c_str());
     f_stream.write(data.c_str(), data.length());
 }
 
@@ -99,13 +99,13 @@ uint16_t getDataChecksum(string content, uint16_t len, uint32_t seqNo)
 /*
  this function is used to create packet
 */
-packet createPacket(string fName)
+packet createPacket(string fileName)
 {
     struct packet p;
-    strcpy(p.data, fName.c_str());
+    strcpy(p.data, fileName.c_str());
     p.checkSum = 0;
     p.seqNo = 0;
-    p.len = sizeof(p.checkSum) + sizeof(p.len) + sizeof(p.seqNo) + fName.length();
+    p.len = sizeof(p.checkSum) + sizeof(p.len) + sizeof(p.seqNo) + fileName.length();
     return p;
 }
 
@@ -135,10 +135,10 @@ void sendAck(int clientSocket, struct sockaddr_in serverAddress, int seqNo)
 
 int main()
 {
-    vector<string> infos = readInfo();
+    vector<string> infos = getArgs();
     string ipAdr = infos[0];
     int port = stoi(infos[1]);
-    string fName = infos[2];
+    string fileName = infos[2];
     struct sockaddr_in serverAddress;
     int clientSocket;
     memset(&clientSocket, '0', sizeof(clientSocket));
@@ -151,11 +151,11 @@ int main()
     serverAddress.sin_family = AF_INET;
     serverAddress.sin_addr.s_addr = INADDR_ANY;
     serverAddress.sin_port = htons(port);
-    cout << "File Name: " << fName << " size: " << fName.size() << endl;
-    struct packet fName_packet = createPacket(fName);
+    cout << "File Name: " << fileName << " size: " << fileName.size() << endl;
+    struct packet file_packet = createPacket(fileName);
     char *buffer = new char[maxSegSize];
     memset(buffer, 0, maxSegSize);
-    memcpy(buffer, &fName_packet, sizeof(fName_packet));
+    memcpy(buffer, &file_packet, sizeof(file_packet));
     ssize_t bytesSent = sendto(clientSocket, buffer, maxSegSize, 0, (struct sockaddr *)&serverAddress, sizeof(struct sockaddr));
     if (bytesSent == -1)
     {
@@ -215,7 +215,7 @@ int main()
     {
         content += fData[i];
     }
-    writeFile(fName, content);
+    writeFile(fileName, content);
     cout << "File is sent successfully" << endl;
     return 0;
 }
